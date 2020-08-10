@@ -198,10 +198,6 @@ BOOL backdrop_stop_drag(BackdropInfo *info)
 			// Get stop time
 			CurrentTime(&sec,&mic);
 
-			// Draw GELs list
-			SortGList(&GUI->drag_screen_rp);
-			DrawDragList(&GUI->drag_screen_rp,&info->window->WScreen->ViewPort,(info->flags&BDIF_CUSTOM_DRAG)?DRAGF_CUSTOM|DRAGF_REMOVE:0);
-
 			// Normal dragging?
 			if (!(info->flags&BDIF_CUSTOM_DRAG))
 			{
@@ -219,8 +215,9 @@ BOOL backdrop_stop_drag(BackdropInfo *info)
 				}
 			}
 
-			// Clear drag flag
-			GUI->flags&=~GUIF_DRAGGING;
+			// Draw GELs list
+			SortGList(&GUI->drag_screen_rp);
+			DrawDragList(&GUI->drag_screen_rp,&info->window->WScreen->ViewPort,(info->flags&BDIF_CUSTOM_DRAG)?DRAGF_CUSTOM|DRAGF_REMOVE:0);
 
 			// Unlock layer
 			UnlockLayers(&info->window->WScreen->LayerInfo);
@@ -241,11 +238,25 @@ BOOL backdrop_stop_drag(BackdropInfo *info)
 			// Was object being dragged?
 			if (object->drag_info)
 			{
+				if ((info->flags & BDIF_CUSTOM_DRAG) && // is custom drag?
+					(GUI->flags & GUIF_DRAGGING)) // actually did drag? i.e. AddVSprite called
+				{
+					// Now is the right time to remove the object from the GELs list. This is
+					// done in a different place than RemBob for regular dragging. RemBob
+					// needs to be done _before_ DrawDragList()->DrawGList(). With custom
+					// dragging the object needs to _stay_ in the GELs list before the call to
+					// DrawDragList(..., DRAGF_CUSTOM|DRAGF_REMOVE).
+					// Thus, remove the object from the GELs list here instead.
+					RemVSprite(&object->drag_info->sprite);
+				}
 				// Free drag
 				FreeDragInfo(object->drag_info);
 				object->drag_info=0;
 			}
 		}
+
+		// Clear drag flag
+		GUI->flags &= ~GUIF_DRAGGING;
 
 		// Start menu actions, stop mouse reporting
 		info->window->Flags&=~(WFLG_RMBTRAP|WFLG_REPORTMOUSE);
@@ -309,7 +320,16 @@ void backdrop_show_drag(
 			if (!(GUI->flags&GUIF_DRAGGING))
 			{
 				// Add bob to list
-				AddBob(&object->drag_info->bob,&GUI->drag_screen_rp);
+				if (!(info->flags & BDIF_CUSTOM_DRAG))
+				{
+					AddBob(&object->drag_info->bob, &GUI->drag_screen_rp);
+				}
+				else
+				{
+					// Custom dragging is abusing the GELs list merely for keeping track of
+					// the dragged objects, thus use AddVSprite() to link it into the list
+					AddVSprite(&object->drag_info->sprite, &GUI->drag_screen_rp);
+				}
 			}
 		}
 	}
